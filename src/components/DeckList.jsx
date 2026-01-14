@@ -5,11 +5,14 @@ import { LEGACY_BANS } from '../data/legacyBans';
 import { getCardPrintings } from '../api/scryfall';
 import { getAllChoosableSets } from '../data/blocks';
 
-export function DeckList({ deck, onRemoveCard, onImportDeck, deckName, onRenameDeck, onAddCard, legalSets }) {
+export function DeckList({ deck, sideboard = {}, onRemoveCard, onImportDeck, deckName, onRenameDeck, onAddCard, legalSets, printingsMap, setPrintingsMap }) {
     const fileInputRef = useRef(null);
-    const cards = Object.values(deck); // array of { card, count }
+    const cards = Object.values(deck);
+    const sbCards = Object.values(sideboard);
 
-    const totalCards = cards.reduce((acc, item) => acc + item.count, 0);
+    const mainCount = cards.reduce((acc, item) => acc + item.count, 0);
+    const sbCount = sbCards.reduce((acc, item) => acc + item.count, 0);
+    const totalCards = mainCount + sbCount; // Or just display separately, usually users care about 60/15 split
 
     const choosableSets = new Set(getAllChoosableSets());
 
@@ -36,10 +39,13 @@ export function DeckList({ deck, onRemoveCard, onImportDeck, deckName, onRenameD
     const [loadingPrints, setLoadingPrints] = useState(false);
 
     // Auto-fetch printings for potentially illegal cards
+    // Auto-fetch printings for potentially illegal cards (Main + Side)
     useEffect(() => {
         if (!legalSets) return;
 
-        const cardsToCheck = Object.values(deck).filter(({ card }) => {
+        const allCards = [...Object.values(deck), ...Object.values(sideboard)];
+
+        const cardsToCheck = allCards.filter(({ card }) => {
             // Check if card fails primary legality check (specific printing)
             const isPrintedLegal = legalSets.includes(card.set);
             if (isPrintedLegal) return false;
@@ -62,7 +68,7 @@ export function DeckList({ deck, onRemoveCard, onImportDeck, deckName, onRenameD
             fetchPrints();
         });
 
-    }, [deck, legalSets, printingsMap]);
+    }, [deck, sideboard, legalSets, printingsMap]);
 
 
     const handleMouseEnter = async (cardName) => {
@@ -129,23 +135,24 @@ export function DeckList({ deck, onRemoveCard, onImportDeck, deckName, onRenameD
         return baseMsg;
     };
 
-    const illegalCards = cards.filter(({ card }) => !isCardLegal(card));
-    const isDeckLegal = illegalCards.length === 0;
+    const illegalCardsMain = cards.filter(({ card }) => !isCardLegal(card));
+    const illegalCardsSb = sbCards.filter(({ card }) => !isCardLegal(card));
+    const isDeckLegal = illegalCardsMain.length === 0 && illegalCardsSb.length === 0;
 
     const handleExport = (type) => {
-        if (cards.length === 0) return;
+        if (cards.length === 0 && sbCards.length === 0) return;
 
         const timestamp = new Date().toISOString().slice(0, 10);
         const filename = `${deckName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}-${timestamp}`;
 
         if (type === 'arena') {
-            const content = formatDeckAsArena(deck);
+            const content = formatDeckAsArena(deck, sideboard);
             downloadFile(content, `${filename}.txt`, 'text/plain');
         } else if (type === 'cod') {
-            const content = formatDeckAsCod(deck, deckName);
+            const content = formatDeckAsCod(deck, deckName, sideboard);
             downloadFile(content, `${filename}.cod`, 'text/xml');
         } else {
-            const content = formatDeckAsJson(deck, deckName);
+            const content = formatDeckAsJson(deck, deckName, sideboard);
             downloadFile(content, `${filename}.json`, 'application/json');
         }
     };
@@ -194,8 +201,9 @@ export function DeckList({ deck, onRemoveCard, onImportDeck, deckName, onRenameD
                 />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        {totalCards} Cards
-                        {totalCards < 60 && <span style={{ color: 'var(--warning)', marginLeft: '0.5rem' }}>(Min 60)</span>}
+                        Main: {mainCount}
+                        {mainCount < 60 && <span style={{ color: 'var(--warning)', marginLeft: '0.5rem' }}>(Min 60)</span>}
+                        {sbCount > 0 && <span style={{ marginLeft: '1rem' }}>Side: {sbCount}</span>}
                     </span>
                     {!isDeckLegal && (
                         <span style={{ fontSize: '0.8rem', color: 'var(--error)', fontWeight: 'bold' }}>
@@ -206,47 +214,96 @@ export function DeckList({ deck, onRemoveCard, onImportDeck, deckName, onRenameD
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
-                {cards.length === 0 ? (
+                {cards.length === 0 && sbCards.length === 0 ? (
                     <div style={{ textAlign: 'center', color: 'var(--text-secondary)', marginTop: '2rem' }}>
                         Deck is empty.<br />Click cards to add them.
                     </div>
                 ) : (
-                    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                        {cards.map(({ card, count }) => {
-                            const legal = isCardLegal(card);
-                            const isBanned = LEGACY_BANS.includes(card.name) || LEGACY_BANS.includes(card.name.split(' // ')[0]);
+                    <>
+                        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                            {cards.map(({ card, count }) => {
+                                const legal = isCardLegal(card);
+                                const isBanned = LEGACY_BANS.includes(card.name) || LEGACY_BANS.includes(card.name.split(' // ')[0]);
 
-                            return (
-                                <li key={card.name}
-                                    onMouseEnter={() => handleMouseEnter(card.name)}
-                                    onMouseLeave={handleMouseLeave}
-                                    style={{
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                        padding: '0.5rem', marginBottom: '0.5rem',
-                                        background: isBanned ? 'rgba(239, 68, 68, 0.2)' : (legal ? 'rgba(255,255,255,0.05)' : 'rgba(239, 68, 68, 0.1)'),
-                                        border: isBanned ? '1px solid var(--error)' : (legal ? 'none' : '1px solid var(--error)'),
-                                        borderRadius: '6px'
-                                    }}
-                                    title={isBanned ? `BANNED: ${card.name} is banned in Legacy.` : getTooltip(card, legal)}
-                                >
-                                    <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
-                                        <span style={{ fontWeight: 'bold', marginRight: '0.5rem', minWidth: '1.5rem', color: (legal && !isBanned) ? 'inherit' : 'var(--error)' }}>{count}x</span>
-                                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: (legal && !isBanned) ? 'inherit' : 'var(--error)', textDecoration: isBanned ? 'line-through' : 'none' }}>{card.name}</span>
-                                        {isBanned && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', background: 'var(--error)', color: 'white', padding: '0.1rem 0.3rem', borderRadius: '4px' }}>BANNED</span>}
-                                    </div>
-                                    <button
-                                        onClick={() => onRemoveCard(card.name)}
+                                return (
+                                    <li key={card.name}
+                                        onMouseEnter={() => handleMouseEnter(card.name)}
+                                        onMouseLeave={handleMouseLeave}
                                         style={{
-                                            background: 'transparent', border: '1px solid var(--error)', color: 'var(--error)',
-                                            padding: '0.2rem 0.5rem', borderRadius: '4px', cursor: 'pointer', marginLeft: '0.5rem'
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: '0.5rem', marginBottom: '0.5rem',
+                                            background: isBanned ? 'rgba(239, 68, 68, 0.2)' : (legal ? 'rgba(255,255,255,0.05)' : 'rgba(239, 68, 68, 0.1)'),
+                                            border: isBanned ? '1px solid var(--error)' : (legal ? 'none' : '1px solid var(--error)'),
+                                            borderRadius: '6px'
                                         }}
+                                        title={isBanned ? `BANNED: ${card.name} is banned in Legacy.` : getTooltip(card, legal)}
                                     >
-                                        -
-                                    </button>
-                                </li>
-                            );
-                        })}
-                    </ul>
+                                        <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+                                            <span style={{ fontWeight: 'bold', marginRight: '0.5rem', minWidth: '1.5rem', color: (legal && !isBanned) ? 'inherit' : 'var(--error)' }}>{count}x</span>
+                                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: (legal && !isBanned) ? 'inherit' : 'var(--error)', textDecoration: isBanned ? 'line-through' : 'none' }}>{card.name}</span>
+                                            {isBanned && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', background: 'var(--error)', color: 'white', padding: '0.1rem 0.3rem', borderRadius: '4px' }}>BANNED</span>}
+                                        </div>
+                                        <button
+                                            onClick={() => onRemoveCard(card.name)}
+                                            style={{
+                                                background: 'transparent', border: '1px solid var(--error)', color: 'var(--error)',
+                                                padding: '0.2rem 0.5rem', borderRadius: '4px', cursor: 'pointer', marginLeft: '0.5rem'
+                                            }}
+                                        >
+                                            -
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+
+                        {sbCards.length > 0 && (
+                            <div style={{ marginTop: '1.5rem' }}>
+                                <div style={{
+                                    fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--accent-color)',
+                                    borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.25rem', marginBottom: '0.5rem'
+                                }}>
+                                    Sideboard ({sbCount})
+                                </div>
+                                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                                    {sbCards.map(({ card, count }) => {
+                                        const legal = isCardLegal(card);
+                                        const isBanned = LEGACY_BANS.includes(card.name) || LEGACY_BANS.includes(card.name.split(' // ')[0]);
+
+                                        return (
+                                            <li key={`sb-${card.name}`}
+                                                onMouseEnter={() => handleMouseEnter(card.name)}
+                                                onMouseLeave={handleMouseLeave}
+                                                style={{
+                                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                                    padding: '0.5rem', marginBottom: '0.5rem',
+                                                    background: isBanned ? 'rgba(239, 68, 68, 0.2)' : (legal ? 'rgba(255,255,255,0.05)' : 'rgba(239, 68, 68, 0.1)'),
+                                                    border: isBanned ? '1px solid var(--error)' : (legal ? 'none' : '1px solid var(--error)'),
+                                                    borderRadius: '6px'
+                                                }}
+                                                title={isBanned ? `BANNED: ${card.name} is banned in Legacy.` : getTooltip(card, legal)}
+                                            >
+                                                <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+                                                    <span style={{ fontWeight: 'bold', marginRight: '0.5rem', minWidth: '1.5rem', color: (legal && !isBanned) ? 'inherit' : 'var(--error)' }}>{count}x</span>
+                                                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: (legal && !isBanned) ? 'inherit' : 'var(--error)', textDecoration: isBanned ? 'line-through' : 'none' }}>{card.name}</span>
+                                                    {isBanned && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', background: 'var(--error)', color: 'white', padding: '0.1rem 0.3rem', borderRadius: '4px' }}>BANNED</span>}
+                                                </div>
+                                                <button
+                                                    onClick={() => onRemoveCard(card.name, 'sideboard')}
+                                                    style={{
+                                                        background: 'transparent', border: '1px solid var(--error)', color: 'var(--error)',
+                                                        padding: '0.2rem 0.5rem', borderRadius: '4px', cursor: 'pointer', marginLeft: '0.5rem'
+                                                    }}
+                                                >
+                                                    -
+                                                </button>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 

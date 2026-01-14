@@ -399,6 +399,17 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
                                     >
                                         +4
                                     </button>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onAddCard(card, 'sideboard', 1); }}
+                                        style={{
+                                            background: 'rgba(255,255,255,0.2)', border: '1px solid white', borderRadius: '20px',
+                                            padding: '0.25rem 0.75rem', fontSize: '0.9rem', color: '#fbbf24', cursor: 'pointer',
+                                            fontWeight: 'bold', marginTop: '0.25rem'
+                                        }}
+                                        title="Add to Sideboard"
+                                    >
+                                        +SB
+                                    </button>
                                 </div>
                             </div>
                         )

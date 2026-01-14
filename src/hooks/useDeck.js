@@ -55,15 +55,17 @@ export function useDeck() {
     const [deckName, setDeckName] = useState("New Deck");
 
     const importDeck = (deckData) => {
-        // Support both old format (raw deck object) and new format ({ name, deck })
-        if (deckData.deck && deckData.name) {
+        // Support both old format (raw deck object) and new format ({ name, deck, sideboard })
+        if (deckData.deck) {
             setDeck(deckData.deck);
-            setDeckName(deckData.name);
+            setDeckName(deckData.name || "Imported Deck");
+            setSideboard(deckData.sideboard || {});
         } else {
+            // Legacy fallbacks or raw object import
             setDeck(deckData);
             setDeckName("Imported Deck");
+            setSideboard({});
         }
-        setSideboard({});
     };
 
     const clearDeck = () => {

@@ -21,7 +21,7 @@ function App() {
     selectedSetCount
   } = useFormat();
 
-  const { deck, addCard, removeCard, importDeck, deckName, setDeckName } = useDeck();
+  const { deck, sideboard, addCard, removeCard, importDeck, deckName, setDeckName } = useDeck();
 
 
   // Navigation State
@@ -223,6 +223,7 @@ function App() {
             <div style={{ width: '350px', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
               <DeckList
                 deck={deck}
+                sideboard={deck.sideboard || sideboard} // handle potential structure mismatch or just pass sideboard directly
                 onRemoveCard={removeCard}
                 onImportDeck={importDeck}
                 deckName={deckName}

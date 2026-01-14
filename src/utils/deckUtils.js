@@ -1,28 +1,32 @@
 
-export const formatDeckAsArena = (deck) => {
-    // Arena format: Count Name (Set) CollectorNumber
-    // Since we don't have Collector Number easily available in checking locally without lookup,
-    // standard simplified export is: Count Name
-    // Or if we have set/number: Count Name (SET) CN
+export const formatDeckAsArena = (deck, sideboard = {}) => {
+    // Arena format: Count Name
+    // Sideboard separator: "Sideboard"
 
-    // For this app, simplified "Count Name" is safest unless we store more metadata.
-    // However, users might want imports.
-    // Let's do: Count Name
-
-    return Object.values(deck).map(({ card, count }) => {
+    const mainDeck = Object.values(deck).map(({ card, count }) => {
         return `${count} ${card.name}`;
     }).join('\n');
+
+    const sbCards = Object.values(sideboard);
+    if (sbCards.length === 0) return mainDeck;
+
+    const sbText = sbCards.map(({ card, count }) => {
+        return `${count} ${card.name}`;
+    }).join('\n');
+
+    return `${mainDeck}\n\nSideboard\n${sbText}`;
 };
 
-export const formatDeckAsJson = (deck, name) => {
+export const formatDeckAsJson = (deck, name, sideboard = {}) => {
     // Full data export with metadata
     return JSON.stringify({
         name: name || "Untitled Deck",
-        deck: deck
+        deck: deck,
+        sideboard: sideboard
     }, null, 2);
 };
 
-export const formatDeckAsCod = (deck, name) => {
+export const formatDeckAsCod = (deck, name, sideboard = {}) => {
     // Cockatrice XML Format
     // <cockatrice_deck version="1">
     //   <deckname>Name</deckname>
@@ -56,7 +60,23 @@ export const formatDeckAsCod = (deck, name) => {
     });
 
     lines.push('  </zone>');
-    // Sideboard support can be added later if tracked separately
+
+    // Sideboard support
+    if (sideboard && Object.keys(sideboard).length > 0) {
+        lines.push('  <zone name="side">');
+        Object.values(sideboard).forEach(({ card, count }) => {
+            const primaryName = card.name.split(' // ')[0];
+            const safeName = primaryName
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&apos;');
+            lines.push(`    <card number="${count}" name="${safeName}" set="${card.set ? card.set.toUpperCase() : ''}"/>`);
+        });
+        lines.push('  </zone>');
+    }
+
     lines.push('</cockatrice_deck>');
 
     return lines.join('\n');
