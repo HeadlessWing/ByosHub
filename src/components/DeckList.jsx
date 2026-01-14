@@ -35,7 +35,7 @@ export function DeckList({ deck, sideboard = {}, onRemoveCard, onImportDeck, dec
 
     // Hover State for Printings
     const [hoveredCard, setHoveredCard] = useState(null);
-    const [printingsMap, setPrintingsMap] = useState({}); // Cache: { "Card Name": [SetCode1, SetCode2...] }
+
     const [loadingPrints, setLoadingPrints] = useState(false);
 
     // Auto-fetch printings for potentially illegal cards

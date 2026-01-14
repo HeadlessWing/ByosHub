@@ -2,9 +2,12 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { searchCards } from '../api/scryfall';
 import { LEGACY_BANS } from '../data/legacyBans';
 import { NOTABLE_CARDS } from '../data/notableCards';
+import { AdvancedSearchModal } from './AdvancedSearchModal';
 
 export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange, deck = {} }) {
     const [query, setQuery] = useState('');
+    const [advancedFilters, setAdvancedFilters] = useState(null); // { oracleText, typeLine, ... }
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const [cards, setCards] = useState([]);
     const [loading, setLoading] = useState(false);
     const [page, setPage] = useState(1);
@@ -24,105 +27,124 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
 
     // Color Filters State
     const [filters, setFilters] = useState({
-        W: false, U: false, B: false, R: false, G: false, C: false, M: false
+        W: false, U: false, B: false, R: false, G: false, C: false
     });
+    const [multiMode, setMultiMode] = useState('default'); // 'default', 'yes' (only), 'no' (exclude)
 
     const COLORS = [
-        { code: 'W', label: 'Wait', color: '#F8F6D8' }, // White symbol styling roughly
+        { code: 'W', label: 'White', color: '#F8F6D8' },
         { code: 'U', label: 'Blue', color: '#0E68AB' },
         { code: 'B', label: 'Black', color: '#150B00' },
         { code: 'R', label: 'Red', color: '#D3202A' },
         { code: 'G', label: 'Green', color: '#00733E' },
         { code: 'C', label: 'Colorless', color: '#CBC2BF' },
-        { code: 'M', label: 'Multi', color: '#D4AF37' },
     ];
 
     const toggleFilter = (code) => {
-        setFilters(prev => {
-            const current = prev[code];
-            // Cycle: false -> true -> 'exclude' -> false
-            let next;
-            if (current === false) next = true;
-            else if (current === true) next = 'exclude';
-            else next = false;
+        setFilters(prev => ({ ...prev, [code]: !prev[code] }));
+    };
 
-            return { ...prev, [code]: next };
+    const toggleMulti = () => {
+        setMultiMode(prev => {
+            if (prev === 'default') return 'yes';
+            if (prev === 'yes') return 'no';
+            return 'default';
         });
     };
 
     // Construct the set restriction part of the query
     const getSetQuery = useCallback(() => {
-        // null means unrestricted (Deductive Mode)
-        // BUT we still want to filter to ONLY sets that are valid in the app (no promos/commander)
-        // null means unrestricted (Deductive Mode)
-        // Use set_type to filter efficiently instead of listing 100+ sets
         if (legalSets === null) {
             return '(st:core OR st:expansion)';
         }
-
-        // Empty array means standard mode but no sets selected -> Should prevent search
         if (legalSets.length === 0) return null;
-
         const setClause = legalSets.map(code => `set:${code}`).join(' OR ');
         return `(${setClause})`;
     }, [legalSets]);
 
     // Construct Color Query
     const getColorQuery = useCallback(() => {
-        const entries = Object.entries(filters);
-        const includes = entries.filter(([_, val]) => val === true).map(([k]) => k);
-        const excludes = entries.filter(([_, val]) => val === 'exclude').map(([k]) => k);
-
-        // If no filters active at all
-        if (includes.length === 0 && excludes.length === 0) return '';
+        const activeColors = Object.entries(filters)
+            .filter(([_, val]) => val)
+            .map(([k]) => k);
 
         let queryParts = [];
 
-        // 1. Build Includes Clause (Colors)
-        // If we have color includes (W, U, B, R, G, C), we search for cards matching ANY of them.
-        const colorIncludes = includes.filter(k => k !== 'M');
-        const includeMulticolor = includes.includes('M');
+        // 1. Identity Logic
+        if (activeColors.length > 0) {
+            // "Show only cards within these colors"
+            // id<=W means identity is W or Colorless.
+            // id<=WU means identity is W, U, WU, or Colorless.
+            const idString = activeColors.join('').toLowerCase();
+            queryParts.push(`id<=${idString}`);
 
-        if (colorIncludes.length > 0) {
-            const includeClauses = colorIncludes.map(code => {
-                if (code === 'C') return 'color:c';
-                return `(color:${code} OR mana:{${code}})`;
-            });
-            queryParts.push(`(${includeClauses.join(' OR ')})`);
+            // 2. Ensure Colored (unless C is selected or M is active)
+            // If we select 'W', we generally mean W cards, NOT colorless (user: "colorless only when C hit").
+            // So if 'C' is NOT selected, we exclude pure colorless cards by requiring at least one color.
+            if (!filters.C) {
+                // Must have at least one of the selected colors
+                // OR be multicolor (if M is handled separately? No, multicolor implies color)
+
+                // If W is selected: (c>=w). 
+                // If W+U selected: (c>=w OR c>=u).
+                const colorReqs = activeColors.filter(c => c !== 'C').map(c => `c>=${c.toLowerCase()}`);
+                if (colorReqs.length > 0) {
+                    queryParts.push(`(${colorReqs.join(' OR ')})`);
+                } else {
+                    // Only 'C' was removed? If activeColors has entries but no colors (impossible if C is not in it)
+                }
+            }
         }
+        // If NO colors selected -> Default behavior (Show all? or Show None?)
+        // Standard app behavior usually shows all if filters are clear.
 
-        // Apply Multicolor Constraint (AND logic) if 'M' is selected
-        // This ensures if W + M is selected, we get (W) AND (Multicolor) -> White Multicolor cards
-        if (includeMulticolor) {
+        // 3. Multicolor Logic
+        if (multiMode === 'yes') {
             queryParts.push('is:multicolor');
+        } else if (multiMode === 'no') {
+            queryParts.push('-is:multicolor');
         }
-
-        // 2. Build Excludes Clause (AND NOT logic)
-        // Must NOT be any of the excluded colors/types
-        excludes.forEach(code => {
-            if (code === 'C') queryParts.push('-color:c');
-            else if (code === 'M') {
-                // Exclude Multicolor:
-                // -is:multicolor (Removes Gold/Split of 2+ colors)
-                // ids<=1 (Removes Dual Lands, Hybrids, and Off-color activations)
-                // This implies "Strictly Mono-color or Colorless Identity"
-                queryParts.push('(-is:multicolor ids<=1)');
-            }
-            else {
-                // Use Identity exclusion (-id>=X) to fully exclude the color
-                // -color:X might miss cards with off-color activations or hybrids in some contexts
-                // -id>=X ensures the card contains NO trace of that color
-                queryParts.push(`-id>=${code}`);
-            }
-        });
-
-        // 3. Edge Case: Only Excludes
-        // If we have NO includes but HAVE excludes, we are saying "Show everything EXCEPT these".
-        // Scryfall handles "-color:W" fine implies "cards that are not white".
-        // But we might need a base if pure negative? usually unique:cards is already prepended in fetchCardsData.
 
         return queryParts.join(' ');
-    }, [filters]);
+    }, [filters, multiMode]);
+
+    // Construct Advanced Query
+    const getAdvancedQuery = useCallback(() => {
+        if (!advancedFilters) return '';
+        const parts = [];
+
+        // Oracle & Type
+        if (advancedFilters.oracleText) parts.push(`o:"${advancedFilters.oracleText}"`);
+        if (advancedFilters.typeLine) parts.push(`t:"${advancedFilters.typeLine}"`);
+
+        // Mana Value (mv)
+        if (advancedFilters.mvMin) parts.push(`mv>=${advancedFilters.mvMin}`);
+        if (advancedFilters.mvMax) parts.push(`mv<=${advancedFilters.mvMax}`);
+
+        // Power (pow)
+        if (advancedFilters.powerMin) parts.push(`pow>=${advancedFilters.powerMin}`);
+        if (advancedFilters.powerMax) parts.push(`pow<=${advancedFilters.powerMax}`);
+
+        // Toughness (tou)
+        if (advancedFilters.touMin) parts.push(`tou>=${advancedFilters.touMin}`);
+        if (advancedFilters.touMax) parts.push(`tou<=${advancedFilters.touMax}`);
+
+        // Artist (a)
+        if (advancedFilters.artist) parts.push(`a:"${advancedFilters.artist}"`);
+
+        // Rarities
+        const rarities = [];
+        if (advancedFilters.rarities?.common) rarities.push('r:common');
+        if (advancedFilters.rarities?.uncommon) rarities.push('r:uncommon');
+        if (advancedFilters.rarities?.rare) rarities.push('r:rare');
+        if (advancedFilters.rarities?.mythic) rarities.push('r:mythic');
+
+        if (rarities.length > 0) {
+            parts.push(`(${rarities.join(' OR ')})`);
+        }
+
+        return parts.join(' ');
+    }, [advancedFilters]);
 
     // Sort State
     const [sortOrder, setSortOrder] = useState('name');
@@ -183,6 +205,7 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
 
         setLoading(true);
         const colorPart = getColorQuery();
+        const advancedPart = getAdvancedQuery();
 
         // Build base query
         let fullQueryParts = ['unique:cards', 'game:paper', 'year>=1995'];
@@ -190,6 +213,7 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
         if (setQueryPart) fullQueryParts.push(setQueryPart);
         if (query) fullQueryParts.push(`(${query})`);
         if (colorPart) fullQueryParts.push(colorPart);
+        if (advancedPart) fullQueryParts.push(advancedPart);
 
         const fullQuery = fullQueryParts.join(' ');
         const currentPage = isNewSearch ? 1 : page;
@@ -215,7 +239,7 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
             // Only clear loading if we are the current active request (simple check: if not aborted)
             if (!signal.aborted) setLoading(false);
         }
-    }, [legalSets, query, page, getSetQuery, getColorQuery, sortOrder]);
+    }, [legalSets, query, page, getSetQuery, getColorQuery, getAdvancedQuery, sortOrder]);
 
     // ... useEffect ...
     useEffect(() => {
@@ -223,7 +247,7 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
             fetchCardsData(true);
         }, 500);
         return () => clearTimeout(timer);
-    }, [legalSets, query, filters, sortOrder]); // Added sortOrder
+    }, [legalSets, query, filters, sortOrder, advancedFilters]); // Added advancedFilters
 
     // Automatically fetch more if filtered result is empty/small but we have more cards on server
     // This solves the "Notable Only" issue where Page 1 has no notables, so screen is empty.
@@ -245,30 +269,50 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
                 {/* Filters Row */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     {/* Color Filters */}
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', gap: '0.25rem', paddingRight: '1rem', borderRight: '1px solid var(--glass-border)' }}>
                         {COLORS.map(({ code, label, color }) => {
-                            const isActive = filters[code] === true;
-                            const isExclude = filters[code] === 'exclude';
+                            const active = filters[code];
                             return (
                                 <button
                                     key={code}
                                     onClick={() => toggleFilter(code)}
+                                    title={`${label} (${active ? 'Active' : 'Off'})`}
                                     style={{
-                                        width: '30px', height: '30px', borderRadius: '50%', border: 'none',
-                                        background: isExclude ? '#ef4444' : (isActive ? color : 'rgba(255,255,255,0.1)'),
-                                        color: (isActive && code === 'W') ? '#333' : 'white',
-                                        fontWeight: 'bold', cursor: 'pointer',
+                                        width: '2rem', height: '2rem',
+                                        borderRadius: '50%',
+                                        border: active ? `2px solid ${color}` : '2px solid rgba(255,255,255,0.1)',
+                                        background: active ? color : 'transparent',
+                                        color: active ? (['W', 'C'].includes(code) ? 'black' : 'white') : 'rgba(255,255,255,0.5)',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer',
                                         transition: 'all 0.2s',
-                                        boxShadow: isActive || isExclude ? `0 0 10px ${isExclude ? '#ef4444' : color}` : 'none',
-                                        opacity: isActive || isExclude ? 1 : 0.5,
-                                        textDecoration: isExclude ? 'line-through' : 'none'
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
                                     }}
-                                    title={isExclude ? `Exclude ${label}` : `Filter ${label}`}
                                 >
                                     {code}
                                 </button>
                             );
                         })}
+
+                        {/* Multicolor Toggle */}
+                        <button
+                            onClick={toggleMulti}
+                            title={`Multicolor: ${multiMode === 'default' ? 'Allow' : multiMode === 'yes' ? 'Only' : 'None'}`}
+                            style={{
+                                width: '2rem', height: '2rem',
+                                borderRadius: '50%',
+                                border: multiMode !== 'default' ? '2px solid #D4AF37' : '2px solid rgba(255,255,255,0.1)',
+                                background: multiMode === 'yes' ? '#D4AF37' : 'transparent',
+                                color: multiMode === 'yes' ? 'black' : multiMode === 'no' ? '#ef4444' : 'rgba(255,255,255,0.5)',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                marginLeft: '0.25rem'
+                            }}
+                        >
+                            {multiMode === 'no' ? '🚫' : 'M'}
+                        </button>
                     </div>
 
                     {/* Combined Sort & Filter Selector */}
@@ -310,15 +354,49 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
                     </div>
                 </div>
 
-                <input
-                    type="text"
-                    placeholder="Search cards..."
-                    value={query}
-                    onChange={(e) => handleQueryChange(e.target.value)}
-                    className="glass-input"
-                    style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid var(--glass-border)' }}
-                />
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <input
+                        type="text"
+                        placeholder="Search..."
+                        value={query}
+                        onChange={(e) => handleQueryChange(e.target.value)}
+                        className="glass-input"
+                        style={{ flex: 1, padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid var(--glass-border)' }}
+                    />
+                    <button
+                        onClick={() => setShowAdvanced(true)}
+                        className="glass-button"
+                        style={{
+                            padding: '0 1rem',
+                            background: advancedFilters ? 'rgba(167, 139, 250, 0.3)' : 'rgba(255,255,255,0.05)',
+                            borderColor: advancedFilters ? 'var(--accent-color)' : 'var(--glass-border)',
+                            color: advancedFilters ? 'white' : 'var(--text-secondary)'
+                        }}
+                        title="Advanced Filters"
+                    >
+                        ⚙
+                    </button>
+                    {advancedFilters && (
+                        <button
+                            onClick={() => setAdvancedFilters(null)}
+                            title="Clear Filters"
+                            style={{
+                                background: 'transparent', border: 'none', color: '#ef4444',
+                                cursor: 'pointer', fontSize: '1.2rem', padding: '0 0.5rem'
+                            }}
+                        >
+                            ×
+                        </button>
+                    )}
+                </div>
             </div>
+
+            <AdvancedSearchModal
+                isOpen={showAdvanced}
+                onClose={() => setShowAdvanced(false)}
+                onApply={setAdvancedFilters}
+                initialFilters={advancedFilters}
+            />
 
             <div
                 style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}
