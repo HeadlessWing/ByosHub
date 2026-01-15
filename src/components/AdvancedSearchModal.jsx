@@ -12,7 +12,6 @@ export function AdvancedSearchModal({ isOpen, onClose, onApply, initialFilters }
         powerMax: '',
         touMin: '',
         touMax: '',
-        artist: '',
         rarities: { common: false, uncommon: false, rare: false, mythic: false },
     });
 
@@ -159,21 +158,6 @@ export function AdvancedSearchModal({ isOpen, onClose, onApply, initialFilters }
                                 />
                             </div>
                         </div>
-                    </div>
-
-                    {/* Artist */}
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '0.5rem', color: '#ccc' }}>
-                            Artist
-                        </label>
-                        <input
-                            type="text"
-                            className="glass-input"
-                            style={{ width: '100%', padding: '0.5rem', background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
-                            placeholder="e.g. Rebecca Guay"
-                            value={localFilters.artist}
-                            onChange={(e) => setLocalFilters({ ...localFilters, artist: e.target.value })}
-                        />
                     </div>
 
                     {/* Rarity */}

@@ -129,9 +129,6 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
         if (advancedFilters.touMin) parts.push(`tou>=${advancedFilters.touMin}`);
         if (advancedFilters.touMax) parts.push(`tou<=${advancedFilters.touMax}`);
 
-        // Artist (a)
-        if (advancedFilters.artist) parts.push(`a:"${advancedFilters.artist}"`);
-
         // Rarities
         const rarities = [];
         if (advancedFilters.rarities?.common) rarities.push('r:common');
