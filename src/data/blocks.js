@@ -69,21 +69,21 @@ export const MODERN_SETS = [
     { code: 'iko', name: 'Ikoria: Lair of Behemoths' },
     { code: 'znr', name: 'Zendikar Rising' },
     { code: 'khm', name: 'Kaldheim' },
-    { code: 'stx', name: 'Strixhaven: School of Mages', associated: ['sta'] },
+    { code: 'stx', name: 'Strixhaven: School of Mages' }, // sta removed (Mystical Archive)
     { code: 'afr', name: 'Adventures in the Forgotten Realms' },
     { code: 'mid', name: 'Innistrad: Midnight Hunt' },
     { code: 'vow', name: 'Innistrad: Crimson Vow' },
     { code: 'neo', name: 'Kamigawa: Neon Dynasty' },
     { code: 'snc', name: 'Streets of New Capenna' },
     { code: 'dmu', name: 'Dominaria United' },
-    { code: 'bro', name: 'The Brothers\' War', associated: ['brr'] },
+    { code: 'bro', name: 'The Brothers\' War' }, // brr removed (Retro Artifacts)
     { code: 'one', name: 'Phyrexia: All Will Be One' },
-    { code: 'mom', name: 'March of the Machine', associated: ['mat', 'mul'] },
+    { code: 'mom', name: 'March of the Machine' }, // mul removed (Multiverse Legends). mat is isChild so handled by loop.
     { code: 'mat', name: 'March of the Machine: The Aftermath', isChild: true }, // Child of MOM
-    { code: 'woe', name: 'Wilds of Eldraine', associated: ['wot'] },
-    { code: 'lci', name: 'The Lost Caverns of Ixalan', associated: ['rex'] },
+    { code: 'woe', name: 'Wilds of Eldraine' }, // wot removed (Enchanting Tales)
+    { code: 'lci', name: 'The Lost Caverns of Ixalan' }, // rex removed (Jurassic World)
     { code: 'mkm', name: 'Murders at Karlov Manor' },
-    { code: 'otj', name: 'Outlaws of Thunder Junction', associated: ['big', 'otp'] },
+    { code: 'otj', name: 'Outlaws of Thunder Junction' }, // big is isChild so handled by loop. otp removed (Breaking News)
     { code: 'big', name: 'The Big Score', isChild: true }, // Child of OTJ
     { code: 'blb', name: 'Bloomburrow' },
     { code: 'dsk', name: 'Duskmourn: House of Horror' },
