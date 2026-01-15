@@ -312,22 +312,29 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
                         </button>
                     </div>
 
-                    {/* Combined Sort & Filter Selector */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {/* Sort & View Options */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+
+                        {/* Notable Toggle */}
+                        <label style={{
+                            display: 'flex', alignItems: 'center', gap: '0.5rem',
+                            cursor: 'pointer', color: onlyNotable ? 'var(--accent-color)' : 'var(--text-secondary)',
+                            fontWeight: onlyNotable ? 'bold' : 'normal',
+                            fontSize: '0.9rem'
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={onlyNotable}
+                                onChange={(e) => setOnlyNotable(e.target.checked)}
+                                style={{ accentColor: 'var(--accent-color)' }}
+                            />
+                            ★ Notable Only
+                        </label>
+
+                        {/* Sort Dropdown */}
                         <select
-                            value={onlyNotable ? 'notable' : sortOrder}
-                            onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === 'notable') {
-                                    setOnlyNotable(true);
-                                    // Keep underlying sort as name or whatever, doesn't matter much as we filter locally
-                                    // But maybe default to name for consistency
-                                    if (sortOrder !== 'name') setSortOrder('name');
-                                } else {
-                                    setOnlyNotable(false);
-                                    setSortOrder(val);
-                                }
-                            }}
+                            value={sortOrder}
+                            onChange={(e) => setSortOrder(e.target.value)}
                             style={{
                                 padding: '8px',
                                 borderRadius: '4px',
@@ -337,16 +344,11 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
                                 outline: 'none'
                             }}
                         >
-                            <optgroup label="View">
-                                <option value="notable">★ Notable Only</option>
-                            </optgroup>
-                            <optgroup label="Sort By">
-                                <option value="name">Name</option>
-                                <option value="edhrec">EDHREC Rank</option>
-                                <option value="cmc">Mana Value</option>
-                                <option value="usd">Price (USD)</option>
-                                <option value="released">Date Released</option>
-                            </optgroup>
+                            <option value="name">Name</option>
+                            <option value="edhrec">EDHREC Rank</option>
+                            <option value="cmc">Mana Value</option>
+                            <option value="usd">Price (USD)</option>
+                            <option value="released">Date Released</option>
                         </select>
                     </div>
                 </div>
