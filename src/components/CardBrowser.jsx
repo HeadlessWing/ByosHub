@@ -3,6 +3,12 @@ import { searchCards } from '../api/scryfall';
 import { LEGACY_BANS } from '../data/legacyBans';
 import { NOTABLE_CARDS } from '../data/notableCards';
 import { AdvancedSearchModal } from './AdvancedSearchModal';
+import { CardItem } from './CardItem';
+
+// Optimizing lookups: Convert arrays to Sets once
+const NOTABLE_SETS = Object.fromEntries(
+    Object.entries(NOTABLE_CARDS).map(([code, list]) => [code, new Set(list)])
+);
 
 export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange, deck = {} }) {
     const [query, setQuery] = useState('');
@@ -155,18 +161,20 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
 
         return cards.filter(card => {
             const setCode = card.set;
-            const notableList = NOTABLE_CARDS[setCode];
-            if (!notableList) return false;
+            const notableSet = NOTABLE_SETS[setCode];
+            if (!notableSet) return false;
 
-            // Check if card name is in list
-            // Loose check for DFC names (e.g. "Delver of Secrets // Insectile Aberration" vs "Delver of Secrets")
-            // The list usually has front name. Scryfall name usually has " // " if DFC.
-            // We'll check if any notable name matches the card name (exact or startswith)
-            return notableList.some(name => {
-                if (card.name === name) return true;
-                if (card.name.includes(' // ') && card.name.startsWith(name)) return true;
-                return false;
-            });
+            // Direct match (O(1))
+            if (notableSet.has(card.name)) return true;
+
+            // DFC check: if card name has " // ", check if the front part is in the set
+            // Optimization: Only split if it looks like a DFC and not found directly
+            if (card.name.indexOf(' // ') !== -1) {
+                const frontName = card.name.split(' // ')[0];
+                return notableSet.has(frontName);
+            }
+
+            return false;
         });
     }, [cards, onlyNotable]);
 
@@ -445,76 +453,14 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
                         const isBanned = LEGACY_BANS.includes(card.name) || LEGACY_BANS.includes(card.name.split(' // ')[0]);
 
                         return (
-                            <div key={card.id} className="card-item" onClick={() => onAddCard(card)} style={{ cursor: 'pointer', transition: 'transform 0.2s', position: 'relative' }}>
-                                {/* Use normal image */}
-                                {card.image_uris ? (
-                                    <img src={card.image_uris.normal} alt={card.name} style={{ width: '100%', borderRadius: '4.75% / 3.5%', opacity: isBanned ? 0.7 : 1, filter: isBanned ? 'grayscale(100%)' : 'none' }} />
-                                ) : (
-                                    // Handle double-faced cards or other weird layouts if needed, placeholder for now
-                                    card.card_faces && card.card_faces[0].image_uris ? (
-                                        <img src={card.card_faces[0].image_uris.normal} alt={card.name} style={{ width: '100%', borderRadius: '4.75% / 3.5%', opacity: isBanned ? 0.7 : 1, filter: isBanned ? 'grayscale(100%)' : 'none' }} />
-                                    ) : (
-                                        <div style={{ width: '100%', aspectRatio: '63/88', background: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>No Image</div>
-                                    )
-                                )}
-
-                                {/* Banned Indicator */}
-                                {isBanned && (
-                                    <div style={{
-                                        position: 'absolute', top: '10%', left: '0', right: '0',
-                                        background: 'rgba(239, 68, 68, 0.9)', color: 'white',
-                                        fontWeight: 'bold', fontSize: '0.8rem', textAlign: 'center',
-                                        padding: '0.25rem', transform: 'rotate(-5deg)',
-                                        pointerEvents: 'none'
-                                    }}>
-                                        BANNED IN LEGACY
-                                    </div>
-                                )}
-
-                                <div className="hover-add" style={{
-                                    position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
-                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-                                    opacity: 0, transition: 'opacity 0.2s', borderRadius: '4.75% / 3.5%'
-                                }}
-                                    onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                                    onMouseLeave={(e) => e.currentTarget.style.opacity = 0}
-                                >
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onAddCard(card); }}
-                                        style={{
-                                            background: 'rgba(255,255,255,0.2)', border: '1px solid white', borderRadius: '50%',
-                                            width: '40px', height: '40px', fontSize: '1.5rem', color: 'white', cursor: 'pointer',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                        }}
-                                        title="Add 1"
-                                    >
-                                        +
-                                    </button>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onAddCard(card, 'main', 4); }}
-                                        style={{
-                                            background: 'rgba(255,255,255,0.2)', border: '1px solid white', borderRadius: '20px',
-                                            padding: '0.25rem 0.75rem', fontSize: '0.9rem', color: 'white', cursor: 'pointer',
-                                            fontWeight: 'bold'
-                                        }}
-                                        title="Add 4 copies"
-                                    >
-                                        +4
-                                    </button>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onAddCard(card, 'sideboard', 1); }}
-                                        style={{
-                                            background: 'rgba(255,255,255,0.2)', border: '1px solid white', borderRadius: '20px',
-                                            padding: '0.25rem 0.75rem', fontSize: '0.9rem', color: '#fbbf24', cursor: 'pointer',
-                                            fontWeight: 'bold', marginTop: '0.25rem'
-                                        }}
-                                        title="Add to Sideboard"
-                                    >
-                                        +SB
-                                    </button>
-                                </div>
-                            </div>
-                        )
+                            <CardItem
+                                key={card.id}
+                                card={card}
+                                count={count}
+                                isBanned={isBanned}
+                                onAddCard={onAddCard}
+                            />
+                        );
                     })}
                 </div>
             </div>

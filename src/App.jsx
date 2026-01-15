@@ -166,7 +166,7 @@ function App() {
               padding: '2px 6px',
               borderRadius: '4px',
               border: '1px solid rgba(167, 139, 250, 0.3)'
-            }}>v1.0.1</span>
+            }}>v1.7.0</span>
           </h1>
         </div>
 

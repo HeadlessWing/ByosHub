@@ -34,11 +34,28 @@ export function useFormat() {
                 // Modern "block" is 3 adjacent sets starting from the selected one
                 const startIndex = MODERN_SETS.findIndex(s => s.code === block.startSet);
                 if (startIndex !== -1) {
-                    // Add start set
-                    sets.add(MODERN_SETS[startIndex].code);
-                    // Add next 2 if they exist
-                    if (startIndex + 1 < MODERN_SETS.length) sets.add(MODERN_SETS[startIndex + 1].code);
-                    if (startIndex + 2 < MODERN_SETS.length) sets.add(MODERN_SETS[startIndex + 2].code);
+                    let count = 0;
+                    let i = startIndex;
+                    // Iterate and pick 3 "main" sets, including any children along the way
+                    while (i < MODERN_SETS.length) {
+                        const set = MODERN_SETS[i];
+
+                        // If it's a main set (not a child), increment our count
+                        if (!set.isChild) {
+                            if (count >= 3) break; // We found the start of a 4th block, so stop.
+                            count++;
+                        }
+
+                        // Add the set code
+                        sets.add(set.code);
+
+                        // Also add any associated sets (like 'otp' for 'otj', or 'sta' for 'stx')
+                        if (set.associated) {
+                            set.associated.forEach(a => sets.add(a));
+                        }
+
+                        i++;
+                    }
                 }
             }
         });
