@@ -145,6 +145,7 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
 
     // Sort State
     const [sortOrder, setSortOrder] = useState('name');
+    const [sortDirection, setSortDirection] = useState('auto');
     const [onlyNotable, setOnlyNotable] = useState(false);
 
     // Filter displayed cards logic
@@ -169,9 +170,8 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
         });
     }, [cards, onlyNotable]);
 
-    const handleSortChange = (e) => {
-        setSortOrder(e.target.value);
-    };
+    // Handle sort change helper not needed as we use inline setters now, but keeping for reference if expanded
+    // const handleSortChange = ... 
 
     const getCardCount = (card) => {
         const entry = deck[card.name];
@@ -217,7 +217,7 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
 
         // Pass sort order and signal to API
         try {
-            const result = await searchCards(fullQuery, currentPage, { order: sortOrder, signal });
+            const result = await searchCards(fullQuery, currentPage, { order: sortOrder, dir: sortDirection, signal });
 
             if (result.aborted) return; // Ignore aborted requests
 
@@ -236,7 +236,7 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
             // Only clear loading if we are the current active request (simple check: if not aborted)
             if (!signal.aborted) setLoading(false);
         }
-    }, [legalSets, query, page, getSetQuery, getColorQuery, getAdvancedQuery, sortOrder]);
+    }, [legalSets, query, page, getSetQuery, getColorQuery, getAdvancedQuery, sortOrder, sortDirection]);
 
     // ... useEffect ...
     useEffect(() => {
@@ -244,7 +244,7 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
             fetchCardsData(true);
         }, 500);
         return () => clearTimeout(timer);
-    }, [legalSets, query, filters, sortOrder, advancedFilters]); // Added advancedFilters
+    }, [legalSets, query, filters, sortOrder, sortDirection, advancedFilters]); // Added advancedFilters
 
     // Automatically fetch more if filtered result is empty/small but we have more cards on server
     // This solves the "Notable Only" issue where Page 1 has no notables, so screen is empty.
@@ -332,24 +332,49 @@ export function CardBrowser({ legalSets, onAddCard, externalQuery, onQueryChange
                         </label>
 
                         {/* Sort Dropdown */}
-                        <select
-                            value={sortOrder}
-                            onChange={(e) => setSortOrder(e.target.value)}
-                            style={{
-                                padding: '8px',
-                                borderRadius: '4px',
-                                border: '1px solid rgba(167, 139, 250, 0.3)',
-                                background: 'rgba(17, 24, 39, 0.8)',
-                                color: '#e5e7eb',
-                                outline: 'none'
-                            }}
-                        >
-                            <option value="name">Name</option>
-                            <option value="edhrec">EDHREC Rank</option>
-                            <option value="cmc">Mana Value</option>
-                            <option value="usd">Price (USD)</option>
-                            <option value="released">Date Released</option>
-                        </select>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <select
+                                value={sortOrder}
+                                onChange={(e) => setSortOrder(e.target.value)}
+                                style={{
+                                    padding: '8px',
+                                    borderRadius: '4px 0 0 4px',
+                                    border: '1px solid rgba(167, 139, 250, 0.3)',
+                                    borderRight: 'none',
+                                    background: 'rgba(17, 24, 39, 0.8)',
+                                    color: '#e5e7eb',
+                                    outline: 'none'
+                                }}
+                            >
+                                <option value="name">Name</option>
+                                <option value="edhrec">EDHREC Rank</option>
+                                <option value="cmc">Mana Value</option>
+                                <option value="usd">Price (USD)</option>
+                                <option value="released">Date Released</option>
+                                <option value="power">Power</option>
+                                <option value="toughness">Toughness</option>
+                                <option value="rarity">Rarity</option>
+                                <option value="color">Color</option>
+                                <option value="set">Set/Number</option>
+                            </select>
+                            <button
+                                onClick={() => setSortDirection(prev => prev === 'auto' ? 'asc' : prev === 'asc' ? 'desc' : 'auto')}
+                                title={`Sort Direction: ${sortDirection}`}
+                                style={{
+                                    padding: '8px 10px',
+                                    borderRadius: '0 4px 4px 0',
+                                    border: '1px solid rgba(167, 139, 250, 0.3)',
+                                    borderLeft: '1px solid rgba(167, 139, 250, 0.3)', // Visual separation
+                                    background: 'rgba(17, 24, 39, 0.8)',
+                                    color: '#e5e7eb',
+                                    cursor: 'pointer',
+                                    outline: 'none',
+                                    minWidth: '34px'
+                                }}
+                            >
+                                {sortDirection === 'auto' ? '↕' : sortDirection === 'asc' ? '▲' : '▼'}
+                            </button>
+                        </div>
                     </div>
                 </div>
 

@@ -11,8 +11,8 @@ const searchCache = new Map();
  * @param {AbortSignal} [options.signal] - Abort signal for cancellation
  */
 export async function searchCards(query, page = 1, options = {}) {
-    const { order, signal } = options;
-    const cacheKey = `${query}|${page}|${order || ''}`;
+    const { order, dir, signal } = options;
+    const cacheKey = `${query}|${page}|${order || ''}|${dir || ''}`;
 
     if (searchCache.has(cacheKey)) {
         return searchCache.get(cacheKey);
@@ -21,6 +21,7 @@ export async function searchCards(query, page = 1, options = {}) {
     try {
         let url = `${BASE_URL}/cards/search?q=${encodeURIComponent(query)}&page=${page}`;
         if (order) url += `&order=${order}`;
+        if (dir) url += `&dir=${dir}`;
 
         const response = await fetch(url, { signal });
 
