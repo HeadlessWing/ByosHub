@@ -4,8 +4,9 @@ import { useDeck } from './hooks/useDeck'
 import { FormatSelector } from './components/FormatSelector'
 import { CardBrowser } from './components/CardBrowser'
 import { DeckList } from './components/DeckList'
+import { TutorialModal } from './components/TutorialModal'
 import { getCardPrintings } from './api/scryfall'
-import { deduceLockedFormat } from './utils/deduction'
+import { deduceLockedFormat, getLegalizingBlocks } from './utils/deduction'
 import { getExpandedSetList } from './data/blocks'
 
 function App() {
@@ -21,7 +22,7 @@ function App() {
     selectedSetCount
   } = useFormat();
 
-  const { deck, sideboard, addCard, removeCard, importDeck, deckName, setDeckName } = useDeck();
+  const { deck, sideboard, addCard, removeCard, moveCard, importDeck, deckName, setDeckName } = useDeck();
 
 
   // Navigation State
@@ -31,6 +32,7 @@ function App() {
 
   // Deductive Logic (Always Active)
   const [requiredBlocks, setRequiredBlocks] = useState(new Set());
+  const [legalizingBlocks, setLegalizingBlocks] = useState(new Set());
   const [printingsMap, setPrintingsMap] = useState({});
 
   // Deductive Logic Effect
@@ -39,6 +41,7 @@ function App() {
     const cards = Object.values(deck).map(d => d.card);
     if (cards.length === 0) {
       setRequiredBlocks(new Set());
+      setLegalizingBlocks(new Set());
       return;
     }
 
@@ -52,7 +55,7 @@ function App() {
       }
     });
 
-    // 2. Run deduction
+    // 2. Run deduction (Required blocks)
     const { lockedCore, lockedBlocks: newLockedBlocks } = deduceLockedFormat(cards, printingsMap);
 
     // 3. Identification (Passive)
@@ -64,6 +67,32 @@ function App() {
     });
     setRequiredBlocks(newRequiredIds);
   }, [deck, printingsMap]);
+
+  // Legalizing Logic Effect (Depends on legalSets)
+  useEffect(() => {
+    const cards = Object.values(deck).map(d => d.card);
+    if (cards.length === 0) {
+      setLegalizingBlocks(new Set());
+      return;
+    }
+
+    // Identify illegal cards
+    const illegalCards = cards.filter(card => {
+      if (card.type_line?.includes("Basic Land")) return false;
+
+      const prints = printingsMap[card.name] || [{ set: card.set }];
+      // Legal if ANY print is in legalSets
+      // legalSets is array of codes
+      return !prints.some(p => legalSets.includes(p.set));
+    });
+
+    if (illegalCards.length > 0) {
+      const helping = getLegalizingBlocks(illegalCards, printingsMap);
+      setLegalizingBlocks(helping);
+    } else {
+      setLegalizingBlocks(new Set());
+    }
+  }, [deck, printingsMap, legalSets]);
 
   // Calculate potential sets (sets that contain cards currently in deck)
   const potentialSets = new Set();
@@ -131,6 +160,13 @@ function App() {
   // Panel Visibility State
   const [showSidebar, setShowSidebar] = useState(true);
   const [showDecklist, setShowDecklist] = useState(true);
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.onTutorial) {
+      window.electronAPI.onTutorial(() => setShowTutorial(true));
+    }
+  }, []);
 
   // ... (Deductive Logic Effect and other code remains same, skipping to return)
 
@@ -166,7 +202,7 @@ function App() {
               padding: '2px 6px',
               borderRadius: '4px',
               border: '1px solid rgba(167, 139, 250, 0.3)'
-            }}>v1.7.0</span>
+            }}>v1.8.0</span>
           </h1>
         </div>
 
@@ -202,6 +238,7 @@ function App() {
               onToggleView={handleToggleView}
               viewingSets={viewingSets}
               potentialSets={potentialSets}
+              legalizingBlocks={legalizingBlocks}
               onClearViews={handleClearViews}
               onBatchView={handleBatchView}
             />
@@ -229,6 +266,7 @@ function App() {
                 deckName={deckName}
                 onRenameDeck={setDeckName}
                 onAddCard={addCard}
+                onMoveCard={moveCard}
                 legalSets={legalSets}
                 printingsMap={printingsMap} // Pass these down
                 setPrintingsMap={setPrintingsMap}
@@ -237,6 +275,7 @@ function App() {
           )}
         </main>
       </div>
+      {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} />}
     </div >
   )
 }

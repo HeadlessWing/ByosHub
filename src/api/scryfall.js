@@ -80,3 +80,31 @@ export async function getCardPrintings(name) {
         return [];
     }
 }
+
+/**
+ * Get multiple cards by identifiers (for batch import)
+ * @param {Array<object>} identifiers - Array of { name: 'Card Name' } or { id: 'uuid' }
+ */
+export async function getCardsByCollection(identifiers) {
+    if (!identifiers || identifiers.length === 0) return [];
+
+    try {
+        const response = await fetch(`${BASE_URL}/cards/collection`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ identifiers }),
+        });
+
+        if (!response.ok) throw new Error('Batch fetch failed');
+        const data = await response.json();
+
+        // Data contains { data: [found_cards], not_found: [missing_identifiers] }
+        // We might want to handle not_found appropriately, but for now returning found ones
+        return data.data || [];
+    } catch (error) {
+        console.error('Error batch fetching cards:', error);
+        return [];
+    }
+}

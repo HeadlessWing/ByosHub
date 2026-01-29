@@ -74,11 +74,32 @@ export function useDeck() {
         setDeckName("New Deck");
     };
 
+    const moveCard = (cardName, fromZone, toZone) => {
+        const fromSetTarget = fromZone === 'main' ? setDeck : setSideboard;
+        const toSetTarget = toZone === 'main' ? setDeck : setSideboard;
+
+        // 1. Get the card from source
+        const sourceSet = fromZone === 'main' ? deck : sideboard;
+        const item = sourceSet[cardName];
+
+        if (!item) return; // Should not happen
+
+        // 2. Remove one instance from source
+        removeCard(cardName, fromZone);
+
+        // 3. Add one instance to destination
+        // We use the existing addCard logic but need to be careful about not duplicating it too much if we want to reuse `addCard`.
+        // However, `addCard` takes a `destination` arg.
+        // Let's just call `addCard`!
+        addCard(item.card, toZone, 1);
+    };
+
     return {
         deck,
         sideboard,
         addCard,
         removeCard,
+        moveCard,
         importDeck,
         clearDeck,
         deckCount,

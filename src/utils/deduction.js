@@ -135,3 +135,84 @@ export function deduceLockedFormat(cards, printingsMap) {
 
     return { lockedCore, lockedBlocks };
 }
+
+/**
+ * Identify blocks that, if added, would resolve ALL currently illegal cards.
+ * @param {Array} illegalCards - subset of deck cards that are illegal.
+ * @param {Object} printingsMap - Map of cardName -> Array of printings { set: 'code' }.
+ * @returns {Set} Set of block IDs (core:code, trad:name, mod:startSet).
+ */
+export function getLegalizingBlocks(illegalCards, printingsMap) {
+    if (!illegalCards || illegalCards.length === 0) return new Set();
+
+    // 1. Candidate Blocks:
+    // Find all blocks that could legalize the FIRST illegal card.
+    // Any block that legalizes ALL illegal cards MUST be in this set.
+    const firstCard = illegalCards[0];
+    const candidateBlocks = [];
+
+    // Get all sets for first card
+    const firstCardSets = new Set();
+    firstCardSets.add(firstCard.set);
+    if (printingsMap[firstCard.name]) {
+        printingsMap[firstCard.name].forEach(p => firstCardSets.add(p.set));
+    }
+
+    firstCardSets.forEach(sCode => {
+        candidateBlocks.push(...getBlocksContainingSet(sCode));
+    });
+
+    // Deduplicate candidates by ID
+    const uniqueCandidates = new Map(); // ID -> BlockData
+    const getBlockId = (b) => b.type === 'core' ? `core:${b.code}` : (b.type === 'traditional' ? `trad:${b.name}` : `mod:${b.startSet}`);
+
+    candidateBlocks.forEach(b => {
+        uniqueCandidates.set(getBlockId(b), b);
+    });
+
+    const legalizingIds = new Set();
+
+    // 2. Verify Candidates against ALL illegal cards
+    uniqueCandidates.forEach((blockData, blockId) => {
+        if (canBlockLegalizeAll(blockData, illegalCards, printingsMap)) {
+            legalizingIds.add(blockId);
+        }
+    });
+
+    return legalizingIds;
+}
+
+function canBlockLegalizeAll(blockData, illegalCards, printingsMap) {
+    // Determine sets in this block
+    const blockSets = new Set();
+    if (blockData.type === 'core') {
+        blockSets.add(blockData.code);
+    } else if (blockData.type === 'traditional') {
+        blockData.sets.forEach(s => blockSets.add(s));
+    } else if (blockData.type === 'modern') {
+        // We need to reconstruct specific sets for modern block logic
+        // Re-use logic or rely on the fact that getBlocksContainingSet returned it validly?
+        // Wait, getBlocksContainingSet returns "Modern Block starting at X".
+        // But to verify if it covers OTHER cards, we need the actual list of sets in that block.
+        // We can re-derive it.
+        const startIdx = MODERN_SETS.findIndex(s => s.code === blockData.startSet);
+        if (startIdx !== -1) {
+            let count = 0;
+            let i = startIdx;
+            while (i < MODERN_SETS.length && count < 3) {
+                if (!MODERN_SETS[i].isChild) count++;
+                blockSets.add(MODERN_SETS[i].code);
+                if (MODERN_SETS[i].associated) {
+                    MODERN_SETS[i].associated.forEach(a => blockSets.add(a));
+                }
+                i++;
+            }
+        }
+    }
+
+    // Check if ALL illegal cards have at least one printing in blockSets
+    return illegalCards.every(card => {
+        const prints = printingsMap[card.name] || [{ set: card.set }];
+        return prints.some(p => blockSets.has(p.set));
+    });
+}

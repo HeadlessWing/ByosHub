@@ -1,11 +1,11 @@
-import { formatDeckAsArena, formatDeckAsJson, formatDeckAsCod, downloadFile, parseDeckJson } from '../utils/deckUtils';
+import { formatDeckAsArena, formatDeckAsJson, formatDeckAsCod, downloadFile, parseDeckJson, parseDeckText, parseDeckCod } from '../utils/deckUtils';
 import { useRef, useState, useEffect } from 'react';
 import { BASIC_LANDS } from '../data/basicLands';
 import { LEGACY_BANS } from '../data/legacyBans';
-import { getCardPrintings } from '../api/scryfall';
+import { getCardPrintings, getCardsByCollection } from '../api/scryfall';
 import { getAllChoosableSets } from '../data/blocks';
 
-export function DeckList({ deck, sideboard = {}, onRemoveCard, onImportDeck, deckName, onRenameDeck, onAddCard, legalSets, printingsMap, setPrintingsMap }) {
+export function DeckList({ deck, sideboard = {}, onRemoveCard, onMoveCard, onImportDeck, deckName, onRenameDeck, onAddCard, legalSets, printingsMap, setPrintingsMap }) {
     const fileInputRef = useRef(null);
     const cards = Object.values(deck);
     const sbCards = Object.values(sideboard);
@@ -13,6 +13,11 @@ export function DeckList({ deck, sideboard = {}, onRemoveCard, onImportDeck, dec
     const mainCount = cards.reduce((acc, item) => acc + item.count, 0);
     const sbCount = sbCards.reduce((acc, item) => acc + item.count, 0);
     const totalCards = mainCount + sbCount; // Or just display separately, usually users care about 60/15 split
+
+    // Calculate Land Count
+    const landCount = cards.reduce((acc, { card, count }) => {
+        return acc + ((card.type_line && card.type_line.toLowerCase().includes('land')) ? count : 0);
+    }, 0);
 
     const choosableSets = new Set(getAllChoosableSets());
 
@@ -139,21 +144,41 @@ export function DeckList({ deck, sideboard = {}, onRemoveCard, onImportDeck, dec
     const illegalCardsSb = sbCards.filter(({ card }) => !isCardLegal(card));
     const isDeckLegal = illegalCardsMain.length === 0 && illegalCardsSb.length === 0;
 
-    const handleExport = (type) => {
+    const handleExport = async (type) => {
         if (cards.length === 0 && sbCards.length === 0) return;
 
         const timestamp = new Date().toISOString().slice(0, 10);
         const filename = `${deckName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}-${timestamp}`;
 
+        let content = '';
+        let ext = '';
+        let mime = '';
+
         if (type === 'arena') {
-            const content = formatDeckAsArena(deck, sideboard);
-            downloadFile(content, `${filename}.txt`, 'text/plain');
+            content = formatDeckAsArena(deck, sideboard);
+            ext = 'txt';
+            mime = 'text/plain';
         } else if (type === 'cod') {
-            const content = formatDeckAsCod(deck, deckName, sideboard);
-            downloadFile(content, `${filename}.cod`, 'text/xml');
+            content = formatDeckAsCod(deck, deckName, sideboard);
+            ext = 'cod';
+            mime = 'text/xml';
         } else {
-            const content = formatDeckAsJson(deck, deckName, sideboard);
-            downloadFile(content, `${filename}.json`, 'application/json');
+            content = formatDeckAsJson(deck, deckName, sideboard);
+            ext = 'json';
+            mime = 'application/json';
+        }
+
+        // Electron Export
+        if (window.electronAPI) {
+            const result = await window.electronAPI.saveFile(content, `${filename}.${ext}`, type);
+            if (result.status === 'success') {
+                console.log("Saved to:", result.filePath);
+            } else if (result.status === 'error') {
+                alert(`Failed to save: ${result.error}`);
+            }
+        } else {
+            // Web Fallback
+            downloadFile(content, `${filename}.${ext}`, mime);
         }
     };
 
@@ -161,23 +186,100 @@ export function DeckList({ deck, sideboard = {}, onRemoveCard, onImportDeck, dec
         fileInputRef.current.click();
     };
 
+    const processImportedList = async (parsedData, sourceName = "Imported Deck") => {
+        if (parsedData.main.length === 0 && parsedData.side.length === 0) {
+            alert("No cards found in imported data.");
+            return;
+        }
+
+        // Collect all unique names to fetch
+        const allItems = [...parsedData.main, ...parsedData.side];
+        const uniqueNames = [...new Set(allItems.map(i => i.name))];
+
+        if (uniqueNames.length === 0) return;
+
+        // Fetch cards from Scryfall
+        const identifiers = uniqueNames.map(name => ({ name }));
+        // TODO: show loading state properly in UI
+        const foundCards = await getCardsByCollection(identifiers);
+
+        // Map back to deck structure
+        const cardMap = {};
+        foundCards.forEach(card => {
+            cardMap[card.name] = card;
+        });
+
+        // Build new deck object
+        const newDeck = {};
+        const newSideboard = {};
+
+        parsedData.main.forEach(item => {
+            const card = cardMap[item.name] || Object.values(cardMap).find(c => c.name.startsWith(item.name)); // loose match fallback
+            if (card) {
+                newDeck[card.name] = { card, count: item.count };
+            }
+        });
+
+        parsedData.side.forEach(item => {
+            const card = cardMap[item.name] || Object.values(cardMap).find(c => c.name.startsWith(item.name));
+            if (card) {
+                newSideboard[card.name] = { card, count: item.count };
+            }
+        });
+
+        onImportDeck({
+            name: sourceName,
+            deck: newDeck,
+            sideboard: newSideboard
+        });
+    };
+
     const handleFileChange = (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
         const reader = new FileReader();
-        reader.onload = (event) => {
+        reader.onload = async (event) => {
             const content = event.target.result;
-            const parsedDeck = parseDeckJson(content);
-            if (parsedDeck) {
-                onImportDeck(parsedDeck);
+
+            // Try parsing as COD (XML) first if extension or content matches
+            if (file.name.endsWith('.cod') || content.trim().startsWith('<?xml') || content.includes('<cockatrice_deck')) {
+                const parsed = parseDeckCod(content);
+                await processImportedList(parsed, file.name.replace('.cod', ''));
             } else {
-                alert("Invalid deck file.");
+                // Fallback to JSON (Legacy)
+                const parsedDeck = parseDeckJson(content);
+                if (parsedDeck) {
+                    onImportDeck(parsedDeck);
+                } else {
+                    alert("Invalid deck file. Please use .cod or legacy .json files.");
+                }
             }
         };
         reader.readAsText(file);
         // Reset input
         e.target.value = null;
+    };
+
+    const handlePasteImport = async () => {
+        try {
+            const text = await navigator.clipboard.readText();
+            if (!text) return;
+
+            // Detect Format
+            let parsed = { main: [], side: [] };
+            if (text.trim().startsWith('<?xml') || text.includes('<cockatrice_deck')) {
+                parsed = parseDeckCod(text);
+            } else {
+                parsed = parseDeckText(text);
+            }
+
+            await processImportedList(parsed);
+
+        } catch (err) {
+            console.error("Paste failed", err);
+            alert("Failed to read clipboard or fetch cards.");
+        }
     };
 
     return (
@@ -202,6 +304,7 @@ export function DeckList({ deck, sideboard = {}, onRemoveCard, onImportDeck, dec
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                         Main: {mainCount}
+                        <span style={{ marginLeft: '0.5rem', color: 'var(--text-secondary)' }}>({landCount} Lands)</span>
                         {mainCount < 60 && <span style={{ color: 'var(--warning)', marginLeft: '0.5rem' }}>(Min 60)</span>}
                         {sbCount > 0 && <span style={{ marginLeft: '1rem' }}>Side: {sbCount}</span>}
                     </span>
@@ -252,6 +355,17 @@ export function DeckList({ deck, sideboard = {}, onRemoveCard, onImportDeck, dec
                                         >
                                             -
                                         </button>
+                                        <button
+                                            onClick={() => onMoveCard(card.name, 'main', 'sideboard')}
+                                            style={{
+                                                background: 'transparent', border: '1px solid var(--text-secondary)', color: 'var(--text-secondary)',
+                                                padding: '0.2rem 0.5rem', borderRadius: '4px', cursor: 'pointer', marginLeft: '0.25rem',
+                                                fontSize: '0.8rem'
+                                            }}
+                                            title="Move to Sideboard"
+                                        >
+                                            SB
+                                        </button>
                                     </li>
                                 );
                             })}
@@ -296,6 +410,17 @@ export function DeckList({ deck, sideboard = {}, onRemoveCard, onImportDeck, dec
                                                     }}
                                                 >
                                                     -
+                                                </button>
+                                                <button
+                                                    onClick={() => onMoveCard(card.name, 'sideboard', 'main')}
+                                                    style={{
+                                                        background: 'transparent', border: '1px solid var(--text-secondary)', color: 'var(--text-secondary)',
+                                                        padding: '0.2rem 0.5rem', borderRadius: '4px', cursor: 'pointer', marginLeft: '0.25rem',
+                                                        fontSize: '0.8rem'
+                                                    }}
+                                                    title="Move to Main Deck"
+                                                >
+                                                    MD
                                                 </button>
                                             </li>
                                         );
@@ -367,14 +492,17 @@ export function DeckList({ deck, sideboard = {}, onRemoveCard, onImportDeck, dec
                     Backup
                 </button>
                 <button onClick={handleImportClick} className="glass-button secondary" style={{ flex: 1, fontSize: '0.85rem' }}>
-                    Import
+                    Load
+                </button>
+                <button onClick={handlePasteImport} className="glass-button secondary" style={{ flex: 1, fontSize: '0.85rem' }} title="Import from Clipboard">
+                    Paste
                 </button>
 
                 <input
                     type="file"
                     ref={fileInputRef}
                     style={{ display: 'none' }}
-                    accept=".json"
+                    accept=".cod,.json"
                     onChange={handleFileChange}
                 />
             </div>

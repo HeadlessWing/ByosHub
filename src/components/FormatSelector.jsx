@@ -15,8 +15,10 @@ export function FormatSelector({
     onToggleView,
     viewingSets,
     onClearViews,
+
     potentialSets,
-    onBatchView
+    onBatchView,
+    legalizingBlocks
 }) {
     const [openSection, setOpenSection] = useState('core'); // 'core', 'traditional', 'modern'
 
@@ -44,6 +46,15 @@ export function FormatSelector({
 
     const isPotential = (code) => {
         return potentialSets && potentialSets.has(code);
+    };
+
+    const isLegalizing = (id, type) => {
+        if (!legalizingBlocks) return false;
+        let checkId;
+        if (type === 'core') checkId = `core:${id}`;
+        else if (type === 'traditional') checkId = `trad:${id}`;
+        else if (type === 'modern') checkId = `mod:${id}`;
+        return legalizingBlocks.has(checkId);
     };
 
     const handleModernDoubleClick = (code, e) => {
@@ -138,8 +149,9 @@ export function FormatSelector({
                     1 Core Set • Max 6 Sets ({selectedSetCount || 0}/6)
                 </p>
                 {/* Legend */}
-                <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '0.75rem' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem', fontSize: '0.75rem' }}>
                     <span style={{ color: '#10b981' }}>● Required</span>
+                    <span style={{ color: '#a855f7' }}>● Legalizes Deck</span>
                     <span style={{ color: '#fbbf24' }}>● Contains Cards</span>
                 </div>
             </div>
@@ -159,15 +171,16 @@ export function FormatSelector({
                         <div style={{ marginTop: '0.5rem', paddingLeft: '0.5rem' }}>
                             {CORE_SETS.map(set => {
                                 const required = isRequired(set.code, 'core');
-                                const potential = isPotential(set.code) && !required && selectedCore?.code !== set.code;
+                                const legalizing = isLegalizing(set.code, 'core');
+                                const potential = isPotential(set.code) && !required && !legalizing && selectedCore?.code !== set.code;
                                 const viewing = isViewing(set.code);
                                 return (
                                     <div key={set.code} style={{
                                         display: 'flex', alignItems: 'center', marginBottom: '0.5rem',
                                         padding: '0.25rem', borderRadius: '4px',
                                         background: viewing ? 'rgba(255, 255, 255, 0.1)' : 'transparent', // Highlight viewed
-                                        border: required ? '1px solid #10b981' : (potential ? '1px dashed #fbbf24' : 'none'),
-                                        boxShadow: required && selectedCore?.code !== set.code ? '0 0 5px #10b981' : (potential ? '0 0 3px rgba(251, 191, 36, 0.5)' : 'none')
+                                        border: required ? '1px solid #10b981' : (legalizing ? '1px solid #a855f7' : (potential ? '1px dashed #fbbf24' : 'none')),
+                                        boxShadow: required && selectedCore?.code !== set.code ? '0 0 5px #10b981' : (legalizing ? '0 0 5px #a855f7' : (potential ? '0 0 3px rgba(251, 191, 36, 0.5)' : 'none'))
                                     }}>
                                         <input
                                             type="radio"
@@ -188,9 +201,10 @@ export function FormatSelector({
                                             style={{ flex: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: viewing ? 1 : 0.7 }}
                                             title="Click to toggle view in browser"
                                         >
-                                            <span style={{ color: potential ? '#fbbf24' : 'inherit' }}>{set.name}</span>
+                                            <span style={{ color: legalizing ? '#a855f7' : (potential ? '#fbbf24' : 'inherit') }}>{set.name}</span>
                                             {viewing && <span style={{ marginLeft: '0.5rem' }}>👁</span>}
                                             {required && <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#10b981', fontWeight: 'bold' }}>Required</span>}
+                                            {legalizing && <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#a855f7', fontWeight: 'bold' }}>Legalizes Deck</span>}
                                             {potential && <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#fbbf24', fontStyle: 'italic' }}>Contains Cards</span>}
                                         </div>
                                     </div>
@@ -214,18 +228,19 @@ export function FormatSelector({
                             {TRADITIONAL_BLOCKS.map(block => {
                                 const isSelected = isBlockSelected(block.name, 'traditional');
                                 const required = isRequired(block.name, 'traditional');
+                                const legalizing = isLegalizing(block.name, 'traditional');
                                 const isAnyViewed = block.sets.some(s => isViewing(s));
                                 // Check if ANY set in block is potential
                                 const isAnyPotential = block.sets.some(s => isPotential(s));
-                                const potential = isAnyPotential && !required && !isSelected;
+                                const potential = isAnyPotential && !required && !legalizing && !isSelected;
 
                                 return (
                                     <div key={block.name} style={{
                                         display: 'flex', alignItems: 'center', marginBottom: '0.5rem',
                                         padding: '0.25rem', borderRadius: '4px',
                                         background: isAnyViewed ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                                        border: required ? '1px solid #10b981' : (potential ? '1px dashed #fbbf24' : 'none'),
-                                        boxShadow: required && !isSelected ? '0 0 5px #10b981' : (potential ? '0 0 3px rgba(251, 191, 36, 0.5)' : 'none')
+                                        border: required ? '1px solid #10b981' : (legalizing ? '1px solid #a855f7' : (potential ? '1px dashed #fbbf24' : 'none')),
+                                        boxShadow: required && !isSelected ? '0 0 5px #10b981' : (legalizing ? '0 0 5px #a855f7' : (potential ? '0 0 3px rgba(251, 191, 36, 0.5)' : 'none'))
                                     }}>
                                         <input
                                             type="checkbox"
@@ -245,9 +260,10 @@ export function FormatSelector({
                                             title="Click to toggle browsing this block"
                                         >
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <span style={{ color: potential ? '#fbbf24' : 'inherit' }}>{block.name}</span>
+                                                <span style={{ color: legalizing ? '#a855f7' : (potential ? '#fbbf24' : 'inherit') }}>{block.name}</span>
                                                 {isAnyViewed && <span>👁</span>}
                                                 {required && <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 'bold' }}>Required</span>}
+                                                {legalizing && <span style={{ fontSize: '0.75rem', color: '#a855f7', fontWeight: 'bold' }}>Legalizes Deck</span>}
                                                 {potential && <span style={{ fontSize: '0.75rem', color: '#fbbf24', fontStyle: 'italic' }}>Contains Cards</span>}
                                             </div>
                                             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{block.sets.join(' • ').toUpperCase()}</div>
@@ -274,6 +290,7 @@ export function FormatSelector({
                             {MODERN_SETS.map((set, idx) => {
                                 const isStartSet = selectedBlocks.some(b => b.type === 'modern' && b.startSet === set.code);
                                 const required = isRequired(set.code, 'modern');
+                                const legalizing = isLegalizing(set.code, 'modern');
 
                                 const includedInBlock = selectedBlocks.find(b => {
                                     if (b.type !== 'modern') return false;
@@ -299,7 +316,7 @@ export function FormatSelector({
                                 const isIncluded = !!includedInBlock;
                                 const isImplied = isIncluded && !isStartSet;
                                 const viewing = isViewing(set.code);
-                                const potential = isPotential(set.code) && !required && !isIncluded;
+                                const potential = isPotential(set.code) && !required && !legalizing && !isIncluded;
 
                                 return (
                                     <div key={set.code} style={{
@@ -310,8 +327,8 @@ export function FormatSelector({
                                         borderRadius: '4px',
                                         background: viewing ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
                                         marginLeft: isImplied || set.isChild ? '1.5rem' : '0', // Indent child sets too
-                                        border: required ? '1px solid #10b981' : (potential ? '1px dashed #fbbf24' : 'none'),
-                                        boxShadow: required && !isStartSet ? '0 0 5px #10b981' : (potential ? '0 0 3px rgba(251, 191, 36, 0.5)' : 'none')
+                                        border: required ? '1px solid #10b981' : (legalizing ? '1px solid #a855f7' : (potential ? '1px dashed #fbbf24' : 'none')),
+                                        boxShadow: required && !isStartSet ? '0 0 5px #10b981' : (legalizing ? '0 0 5px #a855f7' : (potential ? '0 0 3px rgba(251, 191, 36, 0.5)' : 'none'))
                                     }}>
                                         <input
                                             type="checkbox"
@@ -326,13 +343,14 @@ export function FormatSelector({
                                             style={{ flex: 1, opacity: viewing ? 1 : 0.7, display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
                                             title="Click to view, Double-Click to view context (+/- 2 sets)"
                                         >
-                                            <span style={{ fontSize: '0.9rem', color: potential ? '#fbbf24' : 'inherit' }}>{set.name}</span>
+                                            <span style={{ fontSize: '0.9rem', color: legalizing ? '#a855f7' : (potential ? '#fbbf24' : 'inherit') }}>{set.name}</span>
                                             {viewing && <span style={{ marginLeft: '0.5rem' }}>👁</span>}
                                             {isStartSet && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: required ? '#10b981' : '#cyan', fontWeight: 'bold' }}>
                                                 {required ? '(Required)' : '(Block Leader)'}
                                             </span>}
                                             {isImplied && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', fontStyle: 'italic' }}>(Included in {includedInBlock.name})</span>}
                                             {required && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#10b981', fontWeight: 'bold' }}>Required</span>}
+                                            {legalizing && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#a855f7', fontWeight: 'bold' }}>Legalizes Deck</span>}
                                             {potential && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#fbbf24', fontStyle: 'italic' }}>Contains Cards</span>}
                                         </div>
                                     </div>

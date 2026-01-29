@@ -112,3 +112,66 @@ export const parseDeckJson = (jsonString) => {
         return null;
     }
 };
+
+export const parseDeckText = (text) => {
+    // Arena/MTGO Format: "Count Name" (e.g., "4 Lightning Bolt")
+    // Sideboard support: Separated by empty line or "Sideboard" header
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+    const main = [];
+    const side = [];
+    let isSideboard = false;
+
+    for (const line of lines) {
+        if (line.toLowerCase() === 'sideboard') {
+            isSideboard = true;
+            continue;
+        }
+
+        // Regex for "Count Name"
+        // Also handles "1x Name"
+        const match = line.match(/^(\d+)x?\s+(.+)$/);
+        if (match) {
+            const count = parseInt(match[1], 10);
+            const name = match[2];
+            if (isSideboard) {
+                side.push({ name, count });
+            } else {
+                main.push({ name, count });
+            }
+        }
+    }
+
+    return { main, side };
+};
+
+export const parseDeckCod = (xmlString) => {
+    try {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+
+        const parseZone = (zoneName) => {
+            const zone = xmlDoc.querySelector(`zone[name="${zoneName}"]`);
+            if (!zone) return [];
+
+            const cards = [];
+            const cardNodes = zone.getElementsByTagName('card');
+            for (let i = 0; i < cardNodes.length; i++) {
+                const node = cardNodes[i];
+                const count = parseInt(node.getAttribute('number'), 10) || 1;
+                const name = node.getAttribute('name');
+                if (name) {
+                    cards.push({ name, count });
+                }
+            }
+            return cards;
+        };
+
+        const main = parseZone('main');
+        const side = parseZone('side');
+
+        return { main, side };
+    } catch (e) {
+        console.error("Failed to parse COD:", e);
+        return { main: [], side: [] };
+    }
+};
